@@ -41,9 +41,9 @@
 | 설정·데이터 보존 | PASS | `~/Library/Application Support/Side/` 22M, 교체 전후 파일 목록·크기 동일(ledger.db 22,933,504B, settings.json 806B). Keychain 항목 mdat 변경 없음(회전 없음). `contextAwareness.enabled=true` 유지 |
 | 중복 앱 인덱싱 | PASS | Mac-Ops `scripts/audit-spotlight-app-duplicates.sh /Applications/Side.app` → `PASS | com.minjaechai.Side | /Applications/Side.app` |
 
-## 4. 잔여 항목 — Keychain 승인 대기(사람 조치 필요)
+## 4. 잔여 항목 — Keychain 승인 대기(사람 조치 필요, 이후 해소 — §7)
 
-**새 ad-hoc 서명 바이너리가 기존 Keychain 항목 ACL의 신뢰 cdhash와 달라, 마스터키 읽기에 로그인 키체인 암호 승인이 필요하다.** 이 상태에서는 데몬이 기동되지 않아 `side status`가 `Side is not running. Open Side.app.`을 반환한다.
+**새 ad-hoc 서명 바이너리가 기존 Keychain 항목 ACL의 신뢰 cdhash와 달라, 마스터키 읽기에 로그인 키체인 암호 승인이 필요하다.** 이 상태에서는 데몬이 기동되지 않아 `side status`가 `Side is not running. Open Side.app.`을 반환한다. **(18:50 사용자 승인 후 데몬 기동·RPC 응답 확인 — §7)**
 
 - 근거: securityd 로그 `displaying keychain prompt for /Applications/Side.app(68426)`, ACL 신뢰 요구 `cdhash H"40a5873…"`(구 빌드) vs 신규 `CDHash=3feab1bc…`
 - 화면 요구: SecurityAgent 프롬프트 「Side이(가) 'local-context-awareness-ledger'에 저장된 비밀 정보를 사용하려고 합니다… '로그인' 키체인 암호를 입력하십시오」 — 항상 허용/거부/허용 버튼과 암호 입력란
@@ -60,5 +60,19 @@
 
 ## 6. 남은 미검증
 
-- 데몬 기동 후 실제 수집·검색·health 흐름(사용자 승인 이후 `status`/`doctor` 범위에서 후속 확인 가능, `doctor`는 provider 연결 검사 가능성이 있어 별도 확인 필요)
-- 메뉴바 UI·권한 배너의 실제 화면 상태는 에이전트 측 미확인 — 설정 창은 「Side에 연결 중…/다시 시도」를 표시한 것으로 보고됨
+- 데몬은 §7 시점에 기동·RPC 응답을 확인했으나, 캡처 `running` 전환과 실제 수집·검색·health 흐름은 TCC 재승인 뒤 확인이 필요하다(`doctor`는 provider 연결 검사 가능성이 있어 별도 확인 필요)
+- 설정 창의 실제 화면은 스크린샷으로 확인했다 — 「Side에 연결 중…」 스피너, 「다시 시도」 버튼, 빨간 안내문 「Side가 시작 중입니다. 다시 시도하세요.」(§7)
+
+## 7. 후속 진단 — Keychain 승인 이후 권한 재확인(같은 날 추가 관측)
+
+**사용자가 Keychain 승인을 마친 뒤 데몬은 실제로 기동돼 RPC에 응답하고, 손쉬운 사용 권한도 복구됐지만, 캡처 파이프라인은 입력 모니터링·화면 기록 두 권한의 재승인 대기로 `stopped`를 유지한다.**
+
+- 데몬 기동 확인: 앱(PID 68426)이 18:50:49에 `Resources/side daemon`(PID 66052)을 spawn했고, `run/daemon.sock`이 정상 응답한다. §4의 Keychain 잔여는 해소됐다.
+- `status --json` 관측 경과: 18:53·18:59에는 `accessibilityTrusted=false`, `inputMonitoringTrusted=false`, `screenRecordingTrusted=false`. 사용자가 권한을 다시 허용한 뒤 19:04에는 `accessibilityTrusted=true`로 바뀌었고(실행 중 반영), `inputMonitoringTrusted=false`·`screenRecordingTrusted=false`만 남았다. `state:"stopped"`, `enabled:true`, `banner:"permissions_needed"`, `permissionSheetVisible=true`, `stop_reason:null`, daemon health `state:"paused"`.
+- tccd 로그(읽기 전용, 18:51~18:52): `com.minjaechai.Side`가 `kTCCServiceAccessibility`·`kTCCServiceScreenCapture`에서 `Failed to match existing code requirement`를 기록했다 — 기존 허용 항목이 남아 있으나 저장된 코드 요구사항(cdhash)이 새 바이너리와 불일치했다. 같은 시각 `TCCDEvent type=Modify … kTCCServiceAccessibility … com.minjaechai.Side` 이벤트가 관측됐고, 이후 실제로 `accessibilityTrusted=true`로 전환됐다.
+- 원인 판정: ad-hoc 재빌드마다 cdhash가 바뀌어 기존 TCC 허용이 새 바이너리에 적용되지 않는, §4 Keychain ACL과 같은 기전이다. [설치와복원](../../운영가이드.d/설치와복원.md)의 「임시 서명 빌드이므로 업데이트 후 권한을 다시 물을 수 있다」와 일치한다.
+- `observerPid`는 별도 observer 프로세스나 TCC 책임 주체가 아니다 — `apps/side-mac/Sources/Side/App/SideRuntime.swift:90`에서 `health.observerPid = foreground()?.pid`로, 관측 중인 전면 앱의 pid다(18:59엔 Orca=50102, 19:04엔 다른 전면 앱=52776으로 바뀜). TCC 주체는 `responsibleSelf=true`인 앱 자신(`com.minjaechai.Side`)이다.
+- 시도한 복구와 한계: 설정 창의 「다시 시도」를 Orca computer-use로 클릭하려 했으나 Side 창이 AX window를 노출하지 않아 `permission_denied`(AX reads stayed blocked)를 반환했다. 지시에 따라 같은 조치를 재시도하거나 우회하지 않았고, Orca 권한 확대도 요청하지 않았다.
+- 수행하지 않은 것: SecurityAgent 조작·암호 입력, 시스템 설정의 TCC 토글 변경, `doctor` 실행(provider 호출 가능성), 프로세스 강제 종료, 비공개 캡처 열람 — 모두 미수행이다.
+- 남은 사용자 조치(19:04 기준): 시스템 설정 → 개인 정보 보호 및 보안에서 Side의 **입력 모니터링**과 **화면 기록**(screenOcr 사용 중)을 껐다가 다시 켠다. 화면 기록은 「종료 후 재실행」을 요구할 수 있어, 그 경우 Side 정상 종료 후 Finder의 `/Applications`에서 `Side.app`을 직접 재실행한다. Keychain 프롬프트가 다시 표시되면 로그인 키체인 암호 입력 후 「항상 허용」을 선택한다.
+- 앱·데몬 프로세스와 데이터 루트는 현 상태로 유지했다. 남은 두 권한 허용 뒤 `status`가 `running`으로 전환되는지는 Main이 별도 검증한다.
