@@ -150,8 +150,8 @@ open /Applications/Side.app
 
 ### 완전히 제거하기
 
-1. Side를 종료합니다.
-2. 위의 `clear all`로 이력을 삭제합니다.
+1. Side가 실행 중인 상태에서 컨텍스트 인지를 끄고, 영구 삭제를 원한다면 위의 `clear all`로 이력을 삭제합니다. 이 명령은 실행 중인 데몬이 필요합니다. 보존하려는 기록은 먼저 백업하세요.
+2. 삭제 성공을 확인한 뒤 Side를 종료합니다. 기록을 보존하려면 삭제를 건너뛰고 앱과 데이터 폴더를 별도 보관하세요.
 3. `/Applications/Side.app`과 Side 데이터 디렉터리(`~/Library/Application Support/Side/`)를 제거합니다.
 4. Keychain Access에서 `local-context-awareness-ledger` 및 `side-provider-api-key` 서비스 항목을 별도로 확인해 정리합니다.
 

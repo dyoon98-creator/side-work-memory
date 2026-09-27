@@ -150,8 +150,8 @@ Settings' **Clear history** removes the last 10 minutes, the past hour, today, o
 
 ### Full removal
 
-1. Quit Side.
-2. Delete history with `clear all` above.
+1. While Side is running, disable Context Awareness. If permanent deletion is intended, back up anything you need and run `clear all` above. This command requires the running daemon.
+2. Confirm deletion succeeded, then quit Side. To retain history instead, skip deletion and archive the app and data directory.
 3. Remove `/Applications/Side.app` and the Side data directory (`~/Library/Application Support/Side/`).
 4. Check the `local-context-awareness-ledger` and `side-provider-api-key` service entries separately in Keychain Access.
 
